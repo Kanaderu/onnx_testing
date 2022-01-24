@@ -188,36 +188,111 @@ std::vector<Detection> YOLOv5Detector::detect(cv::Mat& image) {
 
 namespace po = boost::program_options;
 int main(int argc, char* argv[]) {
+    /*
+    cmdline::parser cmd;
+    cmd.add<std::string>("model_path", 'm', "Path to onnx model.", true, "yolov5.onnx");
+    cmd.add<std::string>("image", 'i', "Image source to be detected.", true, "bus.jpg");
+    cmd.add<std::string>("class_names", 'c', "Path of dataset labels.", true, "coco.names");
+    cmd.add("gpu", '\0', "Enable cuda device or cpu.");
 
-    std::string filename;
+    cmd.parse_check(argc, argv);
+
+    bool isGPU = cmd.exist("gpu");
+    std::string classNamesPath = cmd.get<std::string>("class_names");
+    std::vector<std::string> classNames = utils::loadNames(classNamesPath);
+    std::string imagePath = cmd.get<std::string>("image");
+    std::string modelPath = cmd.get<std::string>("model_path");
+
+    if (classNames.empty()) {
+        std::cout << "Empty class names file." << std::endl;
+        return -1;
+    }
+
+    YOLOv5Detector detector{nullptr};
+    try {
+        detector = YOLOv5Detector(modelPath, isGPU);
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return -1;
+    }
+
+    cv::Mat image = cv::imread(imagePath);
+
+    std::vector<Detection> result = detector.detect(image);
+
+    utils::visualizeDetection(image, result, classNames);
+
+    cv::imshow("result", image);
+    // cv::imwrite("result.jpg", image);
+    cv::waitKey(0);
+
+    return 0;
+    */
+
+    std::string filename, modelPath, classNamesPath;
+    bool isGpu;
     try {
         // define optional arguments
         po::options_description description("Lego-CNN YoloV5");
         description.add_options()
             ("help,h", "produces this help message")
             ("version,v", "get version information")
+            ("gpu,g", "enable gpu")
             ("input-file,i", po::value<std::vector<std::string>>(), "input file to process")
+            ("model-path,m", po::value<std::vector<std::string>>(), "path to model")
+            ("class-names-path,c", po::value<std::vector<std::string>>(), "path to class names")
         ;
 
         // define positional arguments
         po::positional_options_description pod;
         pod.add("input-file", -1);
+        pod.add("model-path", -1);
+        pod.add("class-names-path", -1);
 
         po::variables_map vm;
         po::store(po::command_line_parser(argc, argv).options(description).positional(pod).run(), vm);
         po::notify(vm);
 
-        if (vm.count("help")) {
+        if (vm.count("help") || argc <= 1) {
             std::cout << description << "\n";
             std::exit(EXIT_SUCCESS);
         }
 
-        //if (vm.count("input-files")) {
-        std::vector<std::string> data = vm["input-file"].as< std::vector<std::string> >();
-        for (std::vector<std::string>::iterator it = data.begin(); it != data.end(); ++it) {
-            std::cout << "Input File: " << *it<< "\n";
+        if (vm.count("version")) {
+            std::cout << "version 0.0.0" << "\n";
+            std::exit(EXIT_SUCCESS);
         }
-        filename = data.front();
+
+        isGpu = (vm.count("gpu")) ? true : false;
+
+        // only take the first argument for now
+        if (vm.count("input-file")) {
+            std::vector<std::string> data = vm["input-file"].as< std::vector<std::string> >();
+            for (std::vector<std::string>::iterator it = data.begin(); it != data.end(); ++it) {
+                std::cout << "Input File: " << *it << "\n";
+            }
+            filename = data.front();
+        }
+        else {
+            std::cout << "No input file specified. Exiting..." << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
+        if (vm.count("model-path")) {
+            modelPath = vm["model-path"].as<std::vector<std::string>>().front();
+        }
+        else {
+            std::cout << "No model path specified. Exiting..." << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+
+        if (vm.count("class-names-path")) {
+            classNamesPath = vm["class-names-path"].as<std::vector<std::string>>().front();
+        }
+        else {
+            std::cout << "No class names path specified. Exiting..." << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
 
         if (vm.count("compression")) {
             std::cout << "Compression level was set to "
@@ -229,11 +304,28 @@ int main(int argc, char* argv[]) {
     }
     catch (std::exception& e) {
         std::cerr << "error: " << e.what() << "\n";
-        std::exit(-1);
+        std::exit(EXIT_FAILURE);
     }
     catch (...) {
         std::cerr << "Exception of unknown type!\n";
-        std::exit(-1);
+        std::exit(EXIT_FAILURE);
+    }
+    
+    // retrieve class names
+    std::vector<std::string> classNames = utils::loadNames(classNamesPath);
+    if (classNames.empty()) {
+        std::cout << "Empty class names file." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    std::cout << "Loaded " << classNames.size() << " classes from " << classNamesPath << std::endl;
+
+    // setup yolov5 detector
+    YOLOv5Detector detector{nullptr};
+    try {
+        detector = YOLOv5Detector(modelPath, isGpu);
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        std::exit(EXIT_FAILURE);
     }
 
     //std::string filename = "H:\\development\\dev\\onnx-sample\\sample-5s.mp4";
@@ -243,18 +335,30 @@ int main(int argc, char* argv[]) {
 
     if (!cap.isOpened()) {
         std::cout << "Error Opening Video Capture" << std::endl;
-        std::exit(-1);
+        std::exit(EXIT_FAILURE);
     }
 
+    int ctr = 0;
     while (true) {
         cv::Mat frame;
+        std::cout << "Reading frame: " << ctr++ << std::endl;
         cap.read(frame);
 
-        if (frame.empty() || cv::waitKey(5) == 'q') {
+        if (frame.empty()) {
             break;
         }
 
+        std::vector<Detection> result = detector.detect(frame);
+        utils::visualizeDetection(frame, result, classNames);
+
+        std::cout << "Found " << result.size() << " detections" << std::endl;
         cv::imshow("Frame", frame);
+
+        //cv::imwrite("result.jpg", frame);
+        if (cv::waitKey(1) == 'q') {
+            break;
+        }
+        break;
     }
 
     cap.release();
@@ -264,40 +368,3 @@ int main(int argc, char* argv[]) {
 }
 
 
-
-// cmdline::parser cmd;
-// cmd.add<std::string>("model_path", 'm', "Path to onnx model.", true, "yolov5.onnx");
-// cmd.add<std::string>("image", 'i', "Image source to be detected.", true, "bus.jpg");
-// cmd.add<std::string>("class_names", 'c', "Path of dataset labels.", true, "coco.names");
-// cmd.add("gpu", '\0', "Enable cuda device or cpu.");
-
-// cmd.parse_check(argc, argv);
-
-// bool isGPU = cmd.exist("gpu");
-// std::string classNamesPath = cmd.get<std::string>("class_names");
-// std::vector<std::string> classNames = utils::loadNames(classNamesPath);
-// std::string imagePath = cmd.get<std::string>("image");
-// std::string modelPath = cmd.get<std::string>("model_path");
-
-// if (classNames.empty()) {
-//  std::cout << "Empty class names file." << std::endl;
-//  return -1;
-//}
-
-// YOLOv5Detector detector{nullptr};
-// try {
-//  detector = YOLOv5Detector(modelPath, isGPU);
-//} catch (const std::exception& e) {
-//  std::cerr << e.what() << std::endl;
-//  return -1;
-//}
-
-// cv::Mat image = cv::imread(imagePath);
-
-// std::vector<Detection> result = detector.detect(image);
-
-// utils::visualizeDetection(image, result, classNames);
-
-// cv::imshow("result", image);
-//// cv::imwrite("result.jpg", image);
-// cv::waitKey(0);
