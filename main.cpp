@@ -4,7 +4,10 @@
 #include <fstream>
 #include <iostream>
 #include <boost/program_options.hpp>
+#include "utils.h"
+#include "detector.h"
 
+/*
 #include "cmdline.h"
 
 struct Detection {
@@ -184,7 +187,7 @@ std::vector<Detection> YOLOv5Detector::detect(cv::Mat& image) {
     delete[] blob;
 
     return result;
-}
+}*/
 
 namespace po = boost::program_options;
 int main(int argc, char* argv[]) {
@@ -320,9 +323,9 @@ int main(int argc, char* argv[]) {
     std::cout << "Loaded " << classNames.size() << " classes from " << classNamesPath << std::endl;
 
     // setup yolov5 detector
-    YOLOv5Detector detector{nullptr};
+    YOLODetector detector{nullptr};
     try {
-        detector = YOLOv5Detector(modelPath, isGpu);
+        detector = YOLODetector(modelPath, isGpu, cv::Size(640, 640));
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         std::exit(EXIT_FAILURE);
@@ -339,6 +342,8 @@ int main(int argc, char* argv[]) {
     }
 
     int ctr = 0;
+    const float confThreshold = 0.3f;
+    const float iouThreshold = 0.4f;
     while (true) {
         cv::Mat frame;
         std::cout << "Reading frame: " << ctr++ << std::endl;
@@ -348,17 +353,15 @@ int main(int argc, char* argv[]) {
             break;
         }
 
-        std::vector<Detection> result = detector.detect(frame);
+        std::vector<Detection> result = detector.detect(frame, confThreshold, iouThreshold);
         utils::visualizeDetection(frame, result, classNames);
 
         std::cout << "Found " << result.size() << " detections" << std::endl;
         cv::imshow("Frame", frame);
 
-        //cv::imwrite("result.jpg", frame);
         if (cv::waitKey(1) == 'q') {
             break;
         }
-        break;
     }
 
     cap.release();

@@ -30,8 +30,9 @@ find_package(Boost REQUIRED COMPONENTS system filesystem log log_setup program_o
 message(STATUS "Boost version: ${Boost_VERSION}")
 
 include_directories(${Boost_INCLUDE_DIR})
+include_directories(${PROJECT_SOURCE_DIR}/include)
 
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(${PROJECT_NAME} main.cpp detector.cpp utils.cpp)
 target_link_libraries (${PROJECT_NAME} ${Boost_LIBRARIES})
 
 if (APPLE)
