@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <boost/program_options.hpp>
+#include <boost/chrono.hpp>
 #include "utils.h"
 #include "detector.h"
 
@@ -233,7 +234,7 @@ int main(int argc, char* argv[]) {
     */
 
     std::string filename, modelPath, classNamesPath;
-    bool isGpu;
+    bool isGpu, useFilename;
     try {
         // define optional arguments
         po::options_description description("Lego-CNN YoloV5");
@@ -275,10 +276,11 @@ int main(int argc, char* argv[]) {
                 std::cout << "Input File: " << *it << "\n";
             }
             filename = data.front();
+            useFilename = true;
         }
         else {
-            std::cout << "No input file specified. Exiting..." << std::endl;
-            std::exit(EXIT_FAILURE);
+            std::cout << "No input file specified. Defaulting to camera." << std::endl;
+            useFilename = false;
         }
 
         if (vm.count("model-path")) {
@@ -334,29 +336,39 @@ int main(int argc, char* argv[]) {
     //std::string filename = "H:\\development\\dev\\onnx-sample\\sample-5s.mp4";
     std::cout << "Opening file: " << filename << std::endl;
     //cv::VideoCapture cap("filesrc location={" + filename + "} !decodebin !videoconvert !videoscale !video / x - raw, width = 640, pixel - aspect - ratio = 1 / 1 !appsink");
-    cv::VideoCapture cap(filename, cv::CAP_FFMPEG);
+
+    // load filename or camera
+    cv::VideoCapture cap = useFilename ? cv::VideoCapture(filename, cv::CAP_FFMPEG) : cv::VideoCapture(0);
 
     if (!cap.isOpened()) {
         std::cout << "Error Opening Video Capture" << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
-    int ctr = 0;
+    int frame_idx = 0;
     const float confThreshold = 0.3f;
     const float iouThreshold = 0.4f;
+
+    // fps calculation
+    std::chrono::high_resolution_clock::time_point tp_start;
+    long long difference;
+
     while (true) {
         cv::Mat frame;
-        std::cout << "Reading frame: " << ctr++ << std::endl;
+        std::cout << "Reading frame: " << frame_idx++ << std::endl;
         cap.read(frame);
 
         if (frame.empty()) {
             break;
         }
 
+        tp_start = std::chrono::high_resolution_clock::now();
         std::vector<Detection> result = detector.detect(frame, confThreshold, iouThreshold);
         utils::visualizeDetection(frame, result, classNames);
+        difference = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tp_start).count();
 
         std::cout << "Found " << result.size() << " detections" << std::endl;
+        std::cout << "FPS: " << 1E6 / difference << std::endl;
         cv::imshow("Frame", frame);
 
         if (cv::waitKey(1) == 'q') {
