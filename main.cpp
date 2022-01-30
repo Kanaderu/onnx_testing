@@ -258,7 +258,8 @@ int main(int argc, char* argv[]) {
         po::notify(vm);
 
         if (vm.count("help") || argc <= 1) {
-            std::cout << description << "\n";
+            std::cout << cv::getBuildInformation() << std::endl << std::endl;
+            std::cout << description << std::endl;
             std::exit(EXIT_SUCCESS);
         }
 
@@ -345,6 +346,32 @@ int main(int argc, char* argv[]) {
         std::exit(EXIT_FAILURE);
     }
 
+    float fps = cap.get(cv::CAP_PROP_FPS);
+    fps = 5;
+    int width = cap.get(cv::CAP_PROP_FRAME_WIDTH);
+    int height = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
+
+    std::cout << "Video Capture Stats" << std::endl;
+    std::cout << "FPS: " << fps << std::endl;
+    std::cout << "Width: " << width << "px | Height: " << height << "px" << std::endl;
+
+    // setup camera streamer
+    cv::VideoWriter writer(
+        //"appsrc ! videoconvert ! video/x-raw,format=YUY2,width=" + std::to_string(width) + ",height=" + std::to_string(height) + ",framerate=" + std::to_string(int(fps)) + "/1 ! jpegenc ! rtpjpegpay ! udpsink host=127.0.0.1 port=5000",
+        //"appsrc ! videoconvert ! video/x-raw,format=YUY2,width=" + std::to_string(width) + ",height=" + std::to_string(height) + ",framerate=" + std::to_string(int(fps)) + "/1 ! rtpmp2tpay ! udpsink host=127.0.0.1 port=5000",
+        //"appsrc ! videoconvert ! rtpmp2tpay ! udpsink host=127.0.0.1 port=5000",
+        //"appsrc ! queue ! x264enc speed-preset=1 ! h264parse ! mpegtsmux ! rtpmp2tpay ! udpsink host=127.0.0.1 port=5000",
+        "appsrc ! videoconvert ! video/x-raw,format=I420,width=" + std::to_string(width) + ",height=" + std::to_string(height) + ",framerate=" + std::to_string(int(fps)) + "/1 ! " + 
+        "queue ! x264enc speed-preset=1 ! mp4mux ! filesink location=videotestsrc.mp4",
+        //"appsrc ! videoconvert ! video/x-raw,format=YUY2,width=" + std::to_string(width) + ",height=" + std::to_string(height) + ",framerate=" + std::to_string(int(fps)) + "/1 ! " +
+        //"x264enc speed-preset=1 ! h264parse ! mpegtsmux ! rtpmp2tpay ! udpsink host=127.0.0.1 port=5000",
+        cv::CAP_GSTREAMER, 0, fps, cv::Size(width, height), true);
+
+    if (!writer.isOpened()) {
+        std::cerr << "Could not open stream writer" << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
     int frame_idx = 0;
     const float confThreshold = 0.3f;
     const float iouThreshold = 0.4f;
@@ -358,24 +385,38 @@ int main(int argc, char* argv[]) {
         std::cout << "Reading frame: " << frame_idx++ << std::endl;
         cap.read(frame);
 
+        // exit loop on end of stream
         if (frame.empty()) {
             break;
         }
 
+        // run detector and measure timing
         tp_start = std::chrono::high_resolution_clock::now();
         std::vector<Detection> result = detector.detect(frame, confThreshold, iouThreshold);
         utils::visualizeDetection(frame, result, classNames);
         difference = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tp_start).count();
 
+        // display results and fps
         std::cout << "Found " << result.size() << " detections" << std::endl;
         std::cout << "FPS: " << 1E6 / difference << std::endl;
         cv::imshow("Frame", frame);
+        
+        // write frame to output
+        if (writer.isOpened()) {
+            writer.write(frame);
+            std::cout << "Write frame to stream" << std::endl;
+        } else {
+            std::cout << "Stream is not opened!" << std::endl;
+        }
 
+        // exit loop if 'q' is pressed
         if (cv::waitKey(1) == 'q') {
             break;
         }
     }
 
+    // cleanup
+    writer.release();
     cap.release();
     cv::destroyAllWindows();
 
